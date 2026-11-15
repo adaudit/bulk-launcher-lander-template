@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bulklauncher.com/schemas/lander.schema.json",
+  "$comment": "Managed by Bulk Launcher. Edits are overwritten.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "slug"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bulk Launcher lander id. Written by the app; omit for a new lander."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$"
+    },
+    "host": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 253,
+      "description": "Verified tracking domain of this workspace, or null for linksbit.com/l/<slug>."
+    }
+  }
+}

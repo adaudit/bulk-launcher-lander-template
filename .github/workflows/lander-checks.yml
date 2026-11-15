@@ -1,0 +1,64 @@
+name: Lander checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      folder:
+        description: Lander folder
+        required: true
+        type: string
+      commit:
+        description: Optional commit SHA
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Poll Bulk Launcher
+        env:
+          TOKEN: ${{ secrets.BULK_LAUNCHER_TOKEN }}
+          APP_URL: ${{ vars.BULK_LAUNCHER_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$TOKEN" || -z "$APP_URL" ]]; then
+            echo '::notice::Checks skipped: configure BULK_LAUNCHER_TOKEN and BULK_LAUNCHER_URL.'
+            exit 0
+          fi
+          [[ "$APP_URL" == https://* ]] || exit 1
+          for attempt in $(seq 1 60); do
+            status=$(curl --silent --show-error --max-time 20 -o /tmp/check.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "${APP_URL%/}/api/github/v1/checks/$GITHUB_SHA")
+            if [[ "$status" == 404 || "$status" == 501 ]]; then
+              echo '::notice::Checks are not available yet; skipped.'
+              exit 0
+            fi
+            [[ "$status" == 200 ]] || { echo "Check request failed ($status)"; exit 1; }
+            conclusion=$(jq -r '.conclusion // empty' /tmp/check.json)
+            [[ "$conclusion" != failure ]] || { echo 'Bulk Launcher check failed'; exit 1; }
+            if [[ "$conclusion" == success || "$conclusion" == neutral ]]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for Bulk Launcher checks'
+          exit 1
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish via Bulk Launcher
+        env:
+          TOKEN: ${{ secrets.BULK_LAUNCHER_TOKEN }}
+          APP_URL: ${{ vars.BULK_LAUNCHER_URL }}
+          FOLDER: ${{ inputs.folder }}
+          COMMIT: ${{ inputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$TOKEN" && "$APP_URL" == https://* ]] || { echo 'Configure the token and app URL first'; exit 1; }
+          jq -n --arg folder "$FOLDER" --arg commit "$COMMIT" '{folder:$folder} + (if $commit == "" then {} else {commit:$commit} end)' > /tmp/publish.json
+          curl --fail-with-body --silent --show-error --max-time 60 -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/publish.json "${APP_URL%/}/api/github/v1/publish"
